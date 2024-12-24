@@ -3,3 +3,5 @@
 V2rayNG/app/release/output.json
 .idea/
 .gradle/
+libtun2socks.so
+libhysteria2.so
