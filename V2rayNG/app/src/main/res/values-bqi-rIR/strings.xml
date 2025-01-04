@@ -120,7 +120,7 @@
     <string name="server_lab_port_hop_interval">فاسله پورت گوم (سانیه)</string>
     <string name="server_lab_stream_pinsha256">pinSHA256</string>
     <string name="server_lab_xhttp_mode">هالت XHTTP</string>
-    <string name="server_lab_xhttp_extra">XHTTP قلوه خام JSON، قالوو: { XHTTPObject }</string>
+    <string name="server_lab_xhttp_extra">XHTTP Extra خام JSON، قالوو: { XHTTPObject }</string>
 
     <!-- PerAppProxyActivity -->
     <string name="msg_dialog_progress">هون بار ونی بۊ</string>
@@ -176,12 +176,13 @@
     <string name="summary_pref_remote_dns">DNS</string>
 
     <string name="title_pref_vpn_dns">VPN DNS (تینا IPv4/v6)</string>
+    <string name="title_pref_vpn_bypass_lan">Does VPN bypass LAN</string>
 
     <string name="title_pref_domestic_dns">DNS منی (اختیاری)</string>
     <string name="summary_pref_domestic_dns">DNS</string>
 
-    <string name="title_pref_dns_hosts">DNS hosts (Format: domain:address,…)</string>
-    <string name="summary_pref_dns_hosts">domain:address,…</string>
+    <string name="title_pref_dns_hosts">DNS هاست موستقیم (قالوو: دامنه: آدرس،...)</string>
+    <string name="summary_pref_dns_hosts">دامنه:آدرس،...</string>
 
     <string name="title_pref_delay_test_url">آدرس اینترنتی آزمایش تئخیر واقعی (http/https)</string>
     <string name="summary_pref_delay_test_url">نشۊوی اینترنتی</string>
@@ -336,6 +337,12 @@
         <item>نومگه شه چین</item>
         <item>جهۊوی (Global)</item>
         <item>نومگه اسبؽڌ ایران</item>
+    </string-array>
+
+    <string-array name="vpn_bypass_lan">
+        <item>Follow config</item>
+        <item>Bypass</item>
+        <item>Not Bypass</item>
     </string-array>
 
 </resources>

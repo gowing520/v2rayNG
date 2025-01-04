@@ -1,6 +1,11 @@
 name: Build APK
 
 on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        required: false
+        type: string
   push:
     branches:
       - master
@@ -12,6 +17,112 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        submodules: 'true'
+
+    - name: Prepare build dir
+      run: |
+        mkdir ${{ github.workspace }}/build
+
+    - name: Fetch AndroidLibV2rayLite
+      run: |
+        cd ${{ github.workspace }}/build
+        git clone --depth=1 -b master https://github.com/2dust/AndroidLibV2rayLite.git
+        cd AndroidLibV2rayLite
+        git submodule update --init
+
+    - name: Restore cached libtun2socks
+      id: cache-libtun2socks-restore
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ github.workspace }}/build/AndroidLibV2rayLite/libs
+        key: libtun2socks-${{ runner.os }}-${{ hashFiles('build/AndroidLibV2rayLite/.git/refs/heads/master') }}-${{ hashFiles('build/AndroidLibV2rayLite/.git/modules/badvpn/HEAD') }}-${{ hashFiles('build/AndroidLibV2rayLite/.git/modules/libancillary/HEAD') }}
+
+    - name: Setup Android NDK
+      uses: nttld/setup-ndk@v1
+      id: setup-ndk
+      # Same version as https://gitlab.com/fdroid/fdroiddata/metadata/com.v2ray.ang.yml
+      with:
+        ndk-version: r27
+        add-to-path: true
+        link-to-sdk: true
+        local-cache: true
+
+    - name: Restore Android Symlinks
+      run: |
+        directory="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+        find "$directory" -type l | while read link; do
+            current_target=$(readlink "$link")
+            new_target="$directory/$(basename "$current_target")"
+            ln -sf "$new_target" "$link"
+            echo "Changed $(basename "$link") from $current_target to $new_target"
+        done
+
+    - name: Build libtun2socks
+      if: steps.cache-libtun2socks-restore.outputs.cache-hit != 'true'
+      run: |
+        cd ${{ github.workspace }}/build/AndroidLibV2rayLite
+        bash compile-tun2socks.sh
+        tar -xvzf libtun2socks.so.tgz
+      env:
+        NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
+    - name: Save libtun2socks
+      if: steps.cache-libtun2socks-restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ github.workspace }}/build/AndroidLibV2rayLite/libs
+        key: libtun2socks-${{ runner.os }}-${{ hashFiles('build/AndroidLibV2rayLite/.git/refs/heads/master') }}-${{ hashFiles('build/AndroidLibV2rayLite/.git/modules/badvpn/HEAD') }}-${{ hashFiles('build/AndroidLibV2rayLite/.git/modules/libancillary/HEAD') }}
+
+    - name: Copy libtun2socks
+      run: |
+        cp -r ${{ github.workspace }}/build/AndroidLibV2rayLite/libs ${{ github.workspace }}/V2rayNG/app
+
+    - name: Download libv2ray
+      uses: robinraju/release-downloader@v1
+      with:
+        repository: '2dust/AndroidLibXrayLite'
+        latest: true
+        fileName: 'libv2ray.aar'
+        out-file-path: V2rayNG/app/libs/
+
+    - name: Restore cached libhysteria2
+      id: cache-libhysteria2-restore
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ github.workspace }}/hysteria/libs
+        key: libhysteria2-${{ runner.os }}-${{ hashFiles('.git/modules/hysteria/HEAD') }}-${{ hashFiles('libhysteria.sh') }}
+
+    - name: Fetch Go version from AndroidLibXrayLite
+      if: steps.cache-libhysteria2-restore.outputs.cache-hit != 'true'
+      run: |
+        GO_VERSION=$(curl -sL https://github.com/2dust/AndroidLibXrayLite/raw/refs/heads/main/go.mod | sed -n -E 's/.*go ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p')
+        echo "Go version: $GO_VERSION"
+        echo "GO_VERSION=$GO_VERSION" >> $GITHUB_ENV
+
+    - name: Setup Golang
+      if: steps.cache-libhysteria2-restore.outputs.cache-hit != 'true'
+      uses: actions/setup-go@v5
+      with:
+        go-version: '${{ env.GO_VERSION }}'
+
+    - name: Build libhysteria2
+      if: steps.cache-libhysteria2-restore.outputs.cache-hit != 'true'
+      run: |
+        bash libhysteria2.sh
+      env:
+        ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
+    - name: Save libhysteria2
+      if: steps.cache-libhysteria2-restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ github.workspace }}/hysteria/libs
+        key: libhysteria2-${{ runner.os }}-${{ hashFiles('.git/modules/hysteria/HEAD') }}-${{ hashFiles('libhysteria.sh') }}
+
+    - name: Copy libhysteria2
+      run: |
+        cp -r ${{ github.workspace }}/hysteria/libs ${{ github.workspace }}/V2rayNG/app
 
     - name: Setup Java
       uses: actions/setup-java@v4
@@ -19,36 +130,8 @@ jobs:
         distribution: 'temurin'
         java-version: '21'
 
-    - name: Setup Golang
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.23.4'
-        cache: false
-
-    - name: Patch Go use 600296
-      #https://go-review.googlesource.com/c/go/+/600296
-      run: |
-        cd "$(go env GOROOT)"
-        curl "https://go-review.googlesource.com/changes/go~600296/revisions/5/patch" | base64 -d | patch --verbose -p 1
-
-    - name: Install gomobile
-      run: |
-        go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20240806205939-81131f6468ab
-        echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
-
     - name: Setup Android environment
       uses: android-actions/setup-android@v3
-
-    - name: Build dependencies
-      run: |
-        mkdir ${{ github.workspace }}/build
-        cd ${{ github.workspace }}/build
-        git clone --depth=1 -b main https://github.com/2dust/AndroidLibXrayLite.git
-        cd AndroidLibXrayLite
-        gomobile init
-        go mod tidy -v
-        gomobile bind -v -androidapi 21 -ldflags='-s -w' ./
-        cp *.aar ${{ github.workspace }}/V2rayNG/app/libs/
 
     - name: Decode Keystore
       uses: timheuer/base64-to-file@v1
@@ -61,25 +144,37 @@ jobs:
       run: |
         cd ${{ github.workspace }}/V2rayNG
         chmod 755 gradlew
+        ./gradlew licenseFdroidReleaseReport
         ./gradlew assembleRelease -Pandroid.injected.signing.store.file=${{ steps.android_keystore.outputs.filePath }} -Pandroid.injected.signing.store.password=${{ secrets.APP_KEYSTORE_PASSWORD }} -Pandroid.injected.signing.key.alias=${{ secrets.APP_KEYSTORE_ALIAS }} -Pandroid.injected.signing.key.password=${{ secrets.APP_KEY_PASSWORD }}
+      env:
+        ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
 
     - name: Upload arm64-v8a APK
       uses: actions/upload-artifact@v4
       if: ${{  success() }}
       with:
         name: arm64-v8a
-        path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*arm64-v8a*.apk
+        path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/*/release/*arm64-v8a*.apk
 
     - name: Upload armeabi-v7a APK
       uses: actions/upload-artifact@v4
       if: ${{  success() }}
       with:
         name: armeabi-v7a
-        path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*armeabi-v7a*.apk
+        path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/*/release/*armeabi-v7a*.apk
 
     - name: Upload x86 APK
       uses: actions/upload-artifact@v4
       if: ${{  success() }}
       with:
         name: x86-apk
-        path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/release/*x86*.apk
+        path: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/*/release/*x86*.apk
+
+    - name: Upload to release
+      uses: svenstaro/upload-release-action@v2
+      if: github.event.inputs.release_tag != ''
+      with:
+        file: ${{ github.workspace }}/V2rayNG/app/build/outputs/apk/*playstore*/release/*.apk
+        tag: ${{ github.event.inputs.release_tag }}
+        file_glob: true
+        prerelease: true
